@@ -7,12 +7,12 @@ const inter = Inter( { subsets: [ 'latin' ] } );
 
 // Metadata for the application
 export const metadata = {
-  title: 'Next.js + Firebase Starter',
-  description: 'Template to use Next.js with Firebase',
+  title: 'DeepLuv',
+  description: 'DeepLuv AI Application',
 };
 
 // Root layout component for the application
-export default function RootLayout( { children }: { children: React.ReactNode } ): JSX.Element {
+export default function RootLayout( { children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       {/*
@@ -21,7 +21,7 @@ export default function RootLayout( { children }: { children: React.ReactNode } 
         Learn more at https://beta.nextjs.org/docs/api-reference/file-conventions/head
       */}
       <head />
-      <body>
+      <body className={inter.className}>
         {/* Wrap the children with the AuthContextProvider to provide authentication context */}
         <AuthContextProvider>
           {children}
