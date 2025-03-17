@@ -1,6 +1,48 @@
 import { ethnicityOptions, hairStyleOptions } from './options';
 
 /**
+ * Get the appropriate image path based on option type and gender
+ * @param type The type of option (e.g., 'age', 'ethnicity')
+ * @param id The option ID
+ * @param gender The selected gender (if applicable)
+ * @returns Full image path
+ */
+export const getImagePath = (
+  type: 'types' | 'gender' | 'age' | 'ethnicity' | 'eyes' | 'hair-color' | 'hair-style' | 
+        'body-shape' | 'breast' | 'butt' | 'personality',
+  id: string,
+  gender?: string
+): string => {
+  // Step 1 options (types and gender) are unisex
+  if (type === 'types' || type === 'gender') {
+    return `/images/companions/${type}/${id}.jpg`;
+  }
+  
+  // Personality is unisex
+  if (type === 'personality') {
+    return `/images/companions/${type}/${id}.jpg`;
+  }
+  
+  // Female-only options
+  if (type === 'breast') {
+    return `/images/companions/body/${type}/${id}.jpg`;
+  }
+  
+  // Face-related options with gender variations
+  if (type === 'eyes' || type === 'hair-color' || type === 'hair-style') {
+    return `/images/companions/face/${type}/${gender || 'female'}/${id}.jpg`;
+  }
+  
+  // Body-related options with gender variations
+  if (type === 'body-shape' || type === 'butt') {
+    return `/images/companions/body/${type === 'body-shape' ? 'shape' : type}/${gender || 'female'}/${id}.jpg`;
+  }
+  
+  // Age and ethnicity
+  return `/images/companions/${type}/${gender || 'female'}/${id}.jpg`;
+};
+
+/**
  * Get a gender-specific image URL
  * @param baseUrl Base image URL
  * @param gender Selected gender

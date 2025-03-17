@@ -19,9 +19,16 @@ import {
   faceOptions,
   bodyOptions,
   personalityOptions,
-  formSteps
+  formSteps,
+  getAgeOptions,
+  getEthnicityOptions,
+  getEyeColorOptions,
+  getHairColorOptions,
+  getHairStyleOptions,
+  getBodyShapeOptions,
+  getButtSizeOptions
 } from './options';
-import { getPreviewParams } from './utils';
+import { getGenderFilteredOptions, getPreviewParams } from './utils';
 
 export default function Create() {
   const { user } = useAuthContext() as { user: any };
@@ -74,6 +81,30 @@ export default function Create() {
       router.push('/signin');
     }
   }, [user, router]);
+
+  // Update options when gender changes
+  const [genderSpecificOptions, setGenderSpecificOptions] = useState({
+    ageOptions: getAgeOptions(),
+    ethnicityOptions: getEthnicityOptions(),
+    eyeColorOptions: getEyeColorOptions(),
+    hairColorOptions: getHairColorOptions(),
+    hairStyleOptions: getHairStyleOptions(),
+    bodyShapeOptions: getBodyShapeOptions(),
+    buttSizeOptions: getButtSizeOptions()
+  });
+
+  // Update all options when gender changes
+  useEffect(() => {
+    setGenderSpecificOptions({
+      ageOptions: getAgeOptions(gender),
+      ethnicityOptions: getEthnicityOptions(gender),
+      eyeColorOptions: getEyeColorOptions(gender),
+      hairColorOptions: getHairColorOptions(gender),
+      hairStyleOptions: getHairStyleOptions(gender),
+      bodyShapeOptions: getBodyShapeOptions(gender),
+      buttSizeOptions: getButtSizeOptions(gender)
+    });
+  }, [gender]);
 
   // Show loading while checking authentication
   if (user === undefined) {
@@ -204,7 +235,7 @@ export default function Create() {
                 <div>
                   <h3 className="text-lg font-medium mb-4">Age</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 max-w-4xl">
-                    {ageOptions.map((option) => (
+                    {genderSpecificOptions.ageOptions.map((option) => (
                       <SelectionCard
                         key={option.id}
                         item={option}
@@ -216,7 +247,7 @@ export default function Create() {
                   
                   <h3 className="text-lg font-medium mb-4 mt-8">Ethnicity</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl">
-                    {ethnicityOptions.map((option) => (
+                    {genderSpecificOptions.ethnicityOptions.map((option) => (
                       <SelectionCard
                         key={option.id}
                         item={option}
@@ -235,7 +266,7 @@ export default function Create() {
                   
                   <h3 className="text-lg font-medium mb-4">Eye Color</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 max-w-4xl">
-                    {eyeColorOptions.map((option) => (
+                    {genderSpecificOptions.eyeColorOptions.map((option) => (
                       <SelectionCard
                         key={option.id}
                         item={option}
@@ -247,7 +278,7 @@ export default function Create() {
                   
                   <h3 className="text-lg font-medium mb-4 mt-8">Hair Color</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 max-w-4xl">
-                    {hairColorOptions.map((option) => (
+                    {genderSpecificOptions.hairColorOptions.map((option) => (
                       <SelectionCard
                         key={option.id}
                         item={option}
@@ -259,7 +290,7 @@ export default function Create() {
                   
                   <h3 className="text-lg font-medium mb-4 mt-8">Hair Style</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl">
-                    {hairStyleOptions.map((option) => (
+                    {genderSpecificOptions.hairStyleOptions.map((option) => (
                       <SelectionCard
                         key={option.id}
                         item={option}
@@ -278,7 +309,7 @@ export default function Create() {
                   
                   <h3 className="text-lg font-medium mb-4">Body Shape</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 max-w-4xl">
-                    {bodyShapeOptions.map((option) => (
+                    {genderSpecificOptions.bodyShapeOptions.map((option) => (
                       <SelectionCard
                         key={option.id}
                         item={option}
@@ -306,7 +337,7 @@ export default function Create() {
                   
                   <h3 className="text-lg font-medium mb-4 mt-8">Butt Size</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl">
-                    {buttSizeOptions.map((option) => (
+                    {genderSpecificOptions.buttSizeOptions.map((option) => (
                       <SelectionCard
                         key={option.id}
                         item={option}
@@ -382,11 +413,11 @@ export default function Create() {
                       <>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Age:</span>
-                          <span>{ageOptions.find(a => a.id === age)?.name || '-'}</span>
+                          <span>{genderSpecificOptions.ageOptions.find(a => a.id === age)?.name || '-'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Ethnicity:</span>
-                          <span>{ethnicityOptions.find(e => e.id === ethnicity)?.name || '-'}</span>
+                          <span>{genderSpecificOptions.ethnicityOptions.find(e => e.id === ethnicity)?.name || '-'}</span>
                         </div>
                       </>
                     )}
@@ -394,15 +425,15 @@ export default function Create() {
                       <>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Eye Color:</span>
-                          <span>{eyeColorOptions.find(e => e.id === eyeColor)?.name || '-'}</span>
+                          <span>{genderSpecificOptions.eyeColorOptions.find(e => e.id === eyeColor)?.name || '-'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Hair Color:</span>
-                          <span>{hairColorOptions.find(h => h.id === hairColor)?.name || '-'}</span>
+                          <span>{genderSpecificOptions.hairColorOptions.find(h => h.id === hairColor)?.name || '-'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Hair Style:</span>
-                          <span>{hairStyleOptions.find(h => h.id === hairStyle)?.name || '-'}</span>
+                          <span>{genderSpecificOptions.hairStyleOptions.find(h => h.id === hairStyle)?.name || '-'}</span>
                         </div>
                       </>
                     )}
@@ -410,7 +441,7 @@ export default function Create() {
                       <>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Body Shape:</span>
-                          <span>{bodyShapeOptions.find(b => b.id === bodyShape)?.name || '-'}</span>
+                          <span>{genderSpecificOptions.bodyShapeOptions.find(b => b.id === bodyShape)?.name || '-'}</span>
                         </div>
                         {gender === 'female' && (
                           <div className="flex justify-between">
@@ -420,7 +451,7 @@ export default function Create() {
                         )}
                         <div className="flex justify-between">
                           <span className="text-gray-400">Butt Size:</span>
-                          <span>{buttSizeOptions.find(b => b.id === buttSize)?.name || '-'}</span>
+                          <span>{genderSpecificOptions.buttSizeOptions.find(b => b.id === buttSize)?.name || '-'}</span>
                         </div>
                       </>
                     )}
