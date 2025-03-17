@@ -2,9 +2,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthContext } from '@/context/AuthContext';
+import { useUserCoins } from '@/hooks/useUserCoins';
 import MainLayout from '@/components/layout/MainLayout';
 import SelectionCard from '@/components/create/SelectionCard';
 import Image from 'next/image';
+import { createCompanion } from '@/firebase/firestore/companionService';
 import {
   companionTypes,
   genderOptions,
@@ -23,6 +25,7 @@ import { getGenderFilteredOptions, getPreviewParams } from './utils';
 
 export default function Create() {
   const { user } = useAuthContext() as { user: any };
+  const { coins, useCoins, hasEnoughCoins } = useUserCoins();
   const router = useRouter();
   const [step, setStep] = useState(1);
   
@@ -51,6 +54,29 @@ export default function Create() {
   const [hasGeneratedImage, setHasGeneratedImage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  // Add state for body image variants
+  const [bodyImageVariants, setBodyImageVariants] = useState<string[]>([]);
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState<number>(0);
+
+  // Add state for face image variants
+  const [faceImageVariants, setFaceImageVariants] = useState<string[]>([]);
+  const [selectedFaceVariantIndex, setSelectedFaceVariantIndex] = useState<number>(0);
+  
+  // Add state for prompt storage
+  const [facePrompt, setFacePrompt] = useState('');
+  const [bodyPrompt, setBodyPrompt] = useState('');
+  
+  // Add state for saving to Firebase
+  const [isSavingCompanion, setIsSavingCompanion] = useState(false);
+  const [savingError, setSavingError] = useState<string | null>(null);
+
+  // Add constant for retry attempts
+  const MAX_RETRY_ATTEMPTS = 2;
+
+  // Constants for coin costs
+  const FACE_GENERATION_COST = 2; // Costs 2 coins to generate a face
+  const BODY_GENERATION_COST = 5; // Costs 5 coins to generate a body
 
   // Debug effect to log when preview image changes
   useEffect(() => {
@@ -122,7 +148,7 @@ export default function Create() {
     return <div>Loading...</div>;
   }
 
-  const handleNext = () => {
+  const handleNext = async () => {
     // Validate current step
     if (step === 1 && (!companionType || !gender)) {
       alert('Please select both companion type and gender');
@@ -149,6 +175,12 @@ export default function Create() {
         alert('Please select a butt size');
         return;
       }
+      
+      // Check if user has generated a body image
+      if (!hasGeneratedImage) {
+        alert('Please generate a body image before proceeding');
+        return;
+      }
     }
     if (step === 5 && !name.trim()) {
       alert('Please enter a name');
@@ -159,11 +191,58 @@ export default function Create() {
       return;
     }
 
-    // If on the last step, submit the form
+    // If on the last step, submit the form and save to Firebase
     if (step === 6) {
-      // In a real app, this would submit the data to an API
-      alert('AI Companion created successfully!');
-      router.push('/dashboard');
+      setIsSavingCompanion(true);
+      setSavingError(null);
+      
+      try {
+        // Get the current selected images
+        const selectedFaceImage = faceImageVariants[selectedFaceVariantIndex] || previewImage;
+        const selectedBodyImage = bodyImageVariants[selectedVariantIndex] || previewImage;
+        
+        // Create companion data
+        const companionData = {
+          name,
+          type: companionType,
+          gender,
+          age,
+          ethnicity,
+          eyeColor,
+          hairColor,
+          hairStyle,
+          bodyShape,
+          breastSize: gender === 'female' ? breastSize : undefined,
+          buttSize,
+          personality,
+          facePrompt,
+          bodyPrompt
+        };
+        
+        // Save to Firebase
+        const { companion, error } = await createCompanion(
+          user.uid,
+          companionData,
+          selectedFaceImage,
+          selectedBodyImage
+        );
+        
+        if (error) {
+          console.error('Error saving companion:', error);
+          setSavingError('Failed to save companion. Please try again.');
+          setIsSavingCompanion(false);
+          return;
+        }
+        
+        console.log('Companion saved successfully:', companion);
+        alert('AI Companion created successfully!');
+        router.push('/dashboard');
+      } catch (error) {
+        console.error('Error in companion creation:', error);
+        setSavingError('An unexpected error occurred. Please try again.');
+        setIsSavingCompanion(false);
+      }
+      
       return;
     }
 
@@ -186,9 +265,19 @@ export default function Create() {
   // Handle generate image button click
   const handleGenerateImage = async () => {
     try {
+      // Check if user has enough coins
+      const coinCost = step >= 4 ? FACE_GENERATION_COST + BODY_GENERATION_COST : FACE_GENERATION_COST;
+      
+      if (!hasEnoughCoins(coinCost)) {
+        setErrorMessage(`Not enough coins. You need ${coinCost} coins to generate this image.`);
+        return;
+      }
+      
       setIsGenerating(true);
       setErrorMessage(null);
       setHasGeneratedImage(false); // Reset the generated image flag
+      setBodyImageVariants([]); // Reset image variants
+      setFaceImageVariants([]); // Reset face image variants
       
       // Make sure we have the minimum required fields
       if (!gender || !age || !ethnicity) {
@@ -214,55 +303,153 @@ export default function Create() {
       // For step 4, use both face and body generation APIs in sequence
       if (step >= 4) {
         try {
-          // First, generate the face
-          const faceResponse = await fetch('/api/generate-face', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestData),
-          });
+          // First, generate the face with retry logic
+          let faceGenerationSuccessful = false;
+          let faceData;
+          let attemptCount = 0;
           
-          if (!faceResponse.ok) {
-            const errorData = await faceResponse.json();
-            console.error('Face API error:', errorData);
-            throw new Error(errorData.error || 'Failed to generate face');
+          while (!faceGenerationSuccessful && attemptCount < MAX_RETRY_ATTEMPTS) {
+            attemptCount++;
+            try {
+              const faceResponse = await fetch('/api/generate-face', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestData),
+              });
+              
+              if (!faceResponse.ok) {
+                const errorData = await faceResponse.json();
+                console.error(`Face API error (attempt ${attemptCount}):`, errorData);
+                if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+                  throw new Error(errorData.error || 'Failed to generate face after multiple attempts');
+                }
+                // Wait a moment before retrying
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                continue;
+              }
+              
+              faceData = await faceResponse.json();
+              console.log('Face API response:', faceData);
+              
+              // Store the face prompt for later
+              if (faceData.prompt) {
+                setFacePrompt(faceData.prompt);
+              }
+              
+              if (!faceData.imageUrl && (!faceData.imageUrls || !faceData.imageUrls.length)) {
+                console.error(`No face image URL returned (attempt ${attemptCount})`);
+                if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+                  throw new Error('No face image URL returned after multiple attempts');
+                }
+                continue;
+              }
+              
+              faceGenerationSuccessful = true;
+              
+              // Store face variants if available
+              if (faceData.imageUrls && Array.isArray(faceData.imageUrls) && faceData.imageUrls.length > 0) {
+                setFaceImageVariants(faceData.imageUrls);
+                setSelectedFaceVariantIndex(0);
+              }
+              
+            } catch (error) {
+              console.error(`Face generation error (attempt ${attemptCount}):`, error);
+              if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+                throw error;
+              }
+            }
           }
           
-          const faceData = await faceResponse.json();
-          console.log('Face API response:', faceData);
-          
-          if (!faceData.imageUrl) {
-            throw new Error('No face image URL returned');
+          if (!faceGenerationSuccessful || !faceData) {
+            throw new Error('Failed to generate face image after multiple attempts');
           }
           
           // Now generate the body using the face image URL
-          const bodyResponse = await fetch('/api/generate-body', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              ...requestData,
-              sourceImageUrl: faceData.imageUrl
-            }),
-          });
+          let bodyGenerationSuccessful = false;
+          let bodyData;
+          attemptCount = 0;
           
-          if (!bodyResponse.ok) {
-            const errorData = await bodyResponse.json();
-            console.error('Body API error:', errorData);
-            throw new Error(errorData.error || 'Failed to generate body');
+          while (!bodyGenerationSuccessful && attemptCount < MAX_RETRY_ATTEMPTS) {
+            attemptCount++;
+            try {
+              const bodyResponse = await fetch('/api/generate-body', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  ...requestData,
+                  sourceImageUrl: faceData.imageUrl
+                }),
+              });
+              
+              if (!bodyResponse.ok) {
+                const errorData = await bodyResponse.json();
+                console.error(`Body API error (attempt ${attemptCount}):`, errorData);
+                if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+                  throw new Error(errorData.error || 'Failed to generate body after multiple attempts');
+                }
+                // Wait a moment before retrying
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                continue;
+              }
+              
+              bodyData = await bodyResponse.json();
+              console.log('Body API response:', bodyData);
+              
+              // Store the body prompt for later
+              if (bodyData.prompt) {
+                setBodyPrompt(bodyData.prompt);
+              }
+              
+              if (!bodyData.imageUrls || !Array.isArray(bodyData.imageUrls) || !bodyData.imageUrls.length) {
+                console.error(`No body image URLs returned (attempt ${attemptCount})`);
+                if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+                  throw new Error('No body image URLs returned after multiple attempts');
+                }
+                continue;
+              }
+              
+              bodyGenerationSuccessful = true;
+            } catch (error) {
+              console.error(`Body generation error (attempt ${attemptCount}):`, error);
+              if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+                throw error;
+              }
+            }
           }
           
-          const bodyData = await bodyResponse.json();
-          console.log('Body API response:', bodyData);
+          if (!bodyGenerationSuccessful || !bodyData) {
+            throw new Error('Failed to generate body image after multiple attempts');
+          }
           
-          if (bodyData.imageUrl) {
+          // Check if we received an array of image URLs
+          if (bodyData.imageUrls && Array.isArray(bodyData.imageUrls) && bodyData.imageUrls.length > 0) {
+            setBodyImageVariants(bodyData.imageUrls);
+            setSelectedVariantIndex(0); // Select the first image by default
+            setPreviewImage(bodyData.imageUrls[0]); // Display the first image
+            
+            // Deduct coins for successful generation
+            await useCoins(coinCost);
+            
+            setIsGenerating(false);
+            return;
+          } 
+          // Fallback to single image URL if array isn't provided
+          else if (bodyData.imageUrl) {
+            setBodyImageVariants([bodyData.imageUrl]);
+            setSelectedVariantIndex(0);
             setPreviewImage(bodyData.imageUrl);
+            
+            // Deduct coins for successful generation
+            await useCoins(coinCost);
+            
             setIsGenerating(false);
             return;
           } else {
-            throw new Error('No body image URL returned');
+            throw new Error('No body image URLs returned');
           }
         } catch (error: any) {
           console.error('Error in face/body generation:', error);
@@ -271,43 +458,97 @@ export default function Create() {
           return;
         }
       } else {
-        // For all other steps, just use the face generation API
-        try {
-          const faceResponse = await fetch('/api/generate-face', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestData),
-          });
-          
-          if (!faceResponse.ok) {
-            const errorData = await faceResponse.json();
-            console.error('Face API error:', errorData);
-            throw new Error(errorData.error || 'Failed to generate face');
+        // For all other steps, just use the face generation API with retry logic
+        let faceGenerationSuccessful = false;
+        let faceData;
+        let attemptCount = 0;
+        
+        while (!faceGenerationSuccessful && attemptCount < MAX_RETRY_ATTEMPTS) {
+          attemptCount++;
+          try {
+            const faceResponse = await fetch('/api/generate-face', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(requestData),
+            });
+            
+            if (!faceResponse.ok) {
+              const errorData = await faceResponse.json();
+              console.error(`Face API error (attempt ${attemptCount}):`, errorData);
+              if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+                throw new Error(errorData.error || 'Failed to generate face after multiple attempts');
+              }
+              // Wait a moment before retrying
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              continue;
+            }
+            
+            faceData = await faceResponse.json();
+            console.log('Face API response:', faceData);
+            
+            // Store the face prompt for later
+            if (faceData.prompt) {
+              setFacePrompt(faceData.prompt);
+            }
+            
+            if (faceData.imageUrls && Array.isArray(faceData.imageUrls) && faceData.imageUrls.length > 0) {
+              setFaceImageVariants(faceData.imageUrls);
+              setSelectedFaceVariantIndex(0);
+              setPreviewImage(faceData.imageUrls[0]);
+              faceGenerationSuccessful = true;
+            } else if (faceData.imageUrl) {
+              setFaceImageVariants([faceData.imageUrl]);
+              setSelectedFaceVariantIndex(0);
+              setPreviewImage(faceData.imageUrl);
+              faceGenerationSuccessful = true;
+            } else {
+              console.error(`No face image URL returned (attempt ${attemptCount})`);
+              if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+                throw new Error('No face image URL returned after multiple attempts');
+              }
+              continue;
+            }
+            
+            // Deduct coins for successful generation
+            await useCoins(FACE_GENERATION_COST);
+            
+          } catch (error) {
+            console.error(`Face generation error (attempt ${attemptCount}):`, error);
+            if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+              throw error;
+            }
           }
-          
-          const faceData = await faceResponse.json();
-          console.log('Face API response:', faceData);
-          
-          if (faceData.imageUrl) {
-            setPreviewImage(faceData.imageUrl);
-            setIsGenerating(false);
-            return;
-          } else {
-            throw new Error('No face image URL returned');
-          }
-        } catch (error: any) {
-          console.error('Error generating face:', error);
-          setErrorMessage(error.message || 'Failed to generate face image');
-          setIsGenerating(false);
-          return;
         }
+        
+        if (!faceGenerationSuccessful) {
+          throw new Error('Failed to generate face image after multiple attempts');
+        }
+        
+        setIsGenerating(false);
+        return;
       }
     } catch (error: any) {
       console.error('Error generating image:', error);
-      setErrorMessage(error.message || 'Failed to generate image. Please try again.');
+      setErrorMessage(error.message || 'Failed to generate image. Please try again with different options.');
       setIsGenerating(false);
+    }
+  };
+
+  // Function to select a variant for body images
+  const selectVariant = (index: number) => {
+    if (index >= 0 && index < bodyImageVariants.length) {
+      setSelectedVariantIndex(index);
+      setPreviewImage(bodyImageVariants[index]);
+    }
+  };
+  
+  // Function to select a variant for face images
+  const selectFaceVariant = (index: number) => {
+    if (index >= 0 && index < faceImageVariants.length) {
+      setSelectedFaceVariantIndex(index);
+      setPreviewImage(faceImageVariants[index]);
     }
   };
 
@@ -531,6 +772,13 @@ export default function Create() {
               <div className="lg:w-1/3" ref={previewRef}>
                 <div className="bg-gray-900 p-4 rounded-lg sticky top-4">
                   <h3 className="text-lg font-medium mb-4">Preview</h3>
+                  
+                  {/* Coin information */}
+                  <div className="mb-4 text-sm flex justify-between items-center bg-gray-800 p-2 rounded">
+                    <span>Your balance: <span className="font-bold text-yellow-500">{coins} coins</span></span>
+                    <span>Cost: <span className="font-bold text-yellow-500">{step >= 4 ? `${FACE_GENERATION_COST + BODY_GENERATION_COST}` : `${FACE_GENERATION_COST}`} coins</span></span>
+                  </div>
+                  
                   <div className="aspect-[3/4] relative mb-4 bg-gray-800 rounded-lg overflow-hidden">
                     {previewImage && previewImage.trim() !== '' ? (
                       <Image
@@ -565,6 +813,61 @@ export default function Create() {
                       {errorMessage}
                     </div>
                   )}
+                  
+                  {/* Display face image variants if available (and we're not showing body) */}
+                  {step < 4 && faceImageVariants.length > 1 && (
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium text-gray-300 mb-2">Select Face Variant:</h4>
+                      <div className="grid grid-cols-4 gap-2">
+                        {faceImageVariants.map((url, index) => (
+                          <div 
+                            key={index}
+                            onClick={() => selectFaceVariant(index)}
+                            className={`cursor-pointer aspect-[3/4] relative bg-gray-800 rounded ${
+                              selectedFaceVariantIndex === index ? 'ring-2 ring-purple-500' : 'opacity-70'
+                            }`}
+                          >
+                            <Image
+                              src={url}
+                              alt={`Face Variant ${index + 1}`}
+                              fill
+                              className="object-cover rounded"
+                              unoptimized
+                              sizes="(max-width: 768px) 25vw, 10vw"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Display body image variants if available */}
+                  {bodyImageVariants.length > 1 && (
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium text-gray-300 mb-2">Select Body Variant:</h4>
+                      <div className="grid grid-cols-4 gap-2">
+                        {bodyImageVariants.map((url, index) => (
+                          <div 
+                            key={index}
+                            onClick={() => selectVariant(index)}
+                            className={`cursor-pointer aspect-[3/4] relative bg-gray-800 rounded ${
+                              selectedVariantIndex === index ? 'ring-2 ring-purple-500' : 'opacity-70'
+                            }`}
+                          >
+                            <Image
+                              src={url}
+                              alt={`Body Variant ${index + 1}`}
+                              fill
+                              className="object-cover rounded"
+                              unoptimized
+                              sizes="(max-width: 768px) 25vw, 10vw"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
                   <button
                     onClick={handleGenerateImage}
                     disabled={isGenerating}
@@ -664,12 +967,27 @@ export default function Create() {
               <button
                 type="button"
                 onClick={handleNext}
-                className="px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                disabled={isSavingCompanion}
+                className="px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {step < 6 ? 'Next' : 'Create Companion'}
+                {isSavingCompanion ? (
+                  <>
+                    <span className="inline-block animate-spin mr-2">⟳</span>
+                    Saving...
+                  </>
+                ) : (
+                  step < 6 ? 'Next' : 'Create Companion'
+                )}
               </button>
             </div>
           </div>
+          
+          {/* Saving error message */}
+          {savingError && (
+            <div className="mt-4 p-3 bg-red-900/50 border border-red-700 rounded-md text-sm text-red-200">
+              {savingError}
+            </div>
+          )}
         </div>
       </div>
     </MainLayout>

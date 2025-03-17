@@ -14,11 +14,17 @@ export async function POST(request: NextRequest) {
     // Using the exact format expected by Firebase callable functions
     const payload = {
       data: {
-        prompt
+        prompt,
+        // Add parameter to generate multiple images
+        numSamples: 1 // Start with 1, can be increased if needed
       }
     };
     
     console.log('Sending request to face API with prompt:', prompt);
+    
+    // Add timeout to the face generation API request
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
     
     // Make a request to the face generation API
     const response = await fetch(apiUrl, {
@@ -28,13 +34,26 @@ export async function POST(request: NextRequest) {
         'Accept': 'application/json'
       },
       body: JSON.stringify(payload),
+      signal: controller.signal
+    }).catch(err => {
+      if (err.name === 'AbortError') {
+        throw new Error('Face generation request timed out after 60 seconds');
+      }
+      throw err;
     });
+    
+    // Clear the timeout
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       let errorMessage = 'Failed to generate face';
+      let errorDetails = {};
+      
       try {
         const errorData = await response.json();
         console.error('Face generation API error:', errorData);
+        errorDetails = errorData;
+        
         if (errorData.error && errorData.error.message) {
           errorMessage = errorData.error.message;
         }
@@ -42,8 +61,20 @@ export async function POST(request: NextRequest) {
         console.error('Error parsing error response:', e);
       }
       
+      // Check for specific error types and provide better error messages
+      if (response.status === 500) {
+        errorMessage = 'The face generation service encountered an internal error. Please try a different combination of features.';
+      } else if (response.status === 429) {
+        errorMessage = 'Too many requests to the face generation service. Please try again later.';
+      } else if (response.status === 400) {
+        errorMessage = 'Invalid request to face generation service. Some selected features may be incompatible.';
+      }
+      
       return NextResponse.json(
-        { error: errorMessage }, 
+        { 
+          error: errorMessage,
+          details: errorDetails
+        }, 
         { status: response.status }
       );
     }
@@ -52,25 +83,40 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     console.log('Full API response:', data);
     
-    // Extract imageUrl from the data structure
-    // Handling multiple possible response formats
-    if (data.result && data.result.imageUrl) {
-      return NextResponse.json({ imageUrl: data.result.imageUrl });
+    // Extract image URLs from the data structure and always return an array
+    let imageUrls: string[] = [];
+    
+    // Handle various response formats
+    if (data.result && data.result.imageUrls && Array.isArray(data.result.imageUrls)) {
+      imageUrls = data.result.imageUrls;
+    } else if (data.imageUrls && Array.isArray(data.imageUrls)) {
+      imageUrls = data.imageUrls;
+    } else if (Array.isArray(data.output)) {
+      imageUrls = data.output;
+    } else if (data.result && data.result.imageUrl) {
+      imageUrls = [data.result.imageUrl];
     } else if (data.imageUrl) {
-      return NextResponse.json({ imageUrl: data.imageUrl });
-    } else if (Array.isArray(data.output) && data.output.length > 0) {
-      return NextResponse.json({ imageUrl: data.output[0] });
+      imageUrls = [data.imageUrl];
+    }
+    
+    if (imageUrls.length > 0) {
+      // Return both the array of URLs and the first one for backward compatibility
+      return NextResponse.json({ 
+        imageUrls: imageUrls,
+        imageUrl: imageUrls[0],
+        prompt: prompt
+      });
     } else {
-      console.error('Unexpected API response:', data);
+      console.error('No image URLs found in API response:', data);
       return NextResponse.json(
-        { error: 'Unexpected response from face generation service' }, 
+        { error: 'No image URLs returned from face generation service' }, 
         { status: 500 }
       );
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error during face generation:', error);
     return NextResponse.json(
-      { error: 'Internal server error' }, 
+      { error: error.message || 'Internal server error' }, 
       { status: 500 }
     );
   }

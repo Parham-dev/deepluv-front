@@ -23,12 +23,18 @@ export async function POST(request: NextRequest) {
     const payload = {
       data: {
         prompt,
-        sourceImageUrl
+        sourceImageUrl,
+        // Explicitly request multiple variants
+        numSamples: 4 // Generate 4 different body variations
       }
     };
     
     console.log('Sending request to body API with prompt:', prompt);
     console.log('Using source image URL:', sourceImageUrl);
+    
+    // Add timeout to the body generation API request
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout (body generation takes longer)
     
     // Make a request to the body generation API
     const response = await fetch(apiUrl, {
@@ -38,13 +44,26 @@ export async function POST(request: NextRequest) {
         'Accept': 'application/json'
       },
       body: JSON.stringify(payload),
+      signal: controller.signal
+    }).catch(err => {
+      if (err.name === 'AbortError') {
+        throw new Error('Body generation request timed out after 120 seconds');
+      }
+      throw err;
     });
+    
+    // Clear the timeout
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       let errorMessage = 'Failed to generate body';
+      let errorDetails = {};
+      
       try {
         const errorData = await response.json();
         console.error('Body generation API error:', errorData);
+        errorDetails = errorData;
+        
         if (errorData.error && errorData.error.message) {
           errorMessage = errorData.error.message;
         }
@@ -52,8 +71,20 @@ export async function POST(request: NextRequest) {
         console.error('Error parsing error response:', e);
       }
       
+      // Check for specific error types and provide better error messages
+      if (response.status === 500) {
+        errorMessage = 'The body generation service encountered an internal error. Please try a different combination of features.';
+      } else if (response.status === 429) {
+        errorMessage = 'Too many requests to the body generation service. Please try again later.';
+      } else if (response.status === 400) {
+        errorMessage = 'Invalid request to body generation service. Some selected features may be incompatible.';
+      }
+      
       return NextResponse.json(
-        { error: errorMessage }, 
+        { 
+          error: errorMessage,
+          details: errorDetails
+        }, 
         { status: response.status }
       );
     }
@@ -62,31 +93,46 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     console.log('Full API response:', data);
     
-    // Extract imageUrl from the data structure
-    // Handling multiple possible response formats
-    if (data.result && data.result.imageUrl) {
-      return NextResponse.json({ imageUrl: data.result.imageUrl });
-    } else if (data.result && data.result.imageUrls && Array.isArray(data.result.imageUrls) && data.result.imageUrls.length > 0) {
-      // Handle case where API returns multiple URLs in an array
-      return NextResponse.json({ imageUrl: data.result.imageUrls[0] });
-    } else if (data.imageUrl) {
-      return NextResponse.json({ imageUrl: data.imageUrl });
-    } else if (data.imageUrls && Array.isArray(data.imageUrls) && data.imageUrls.length > 0) {
+    // Extract image URLs from the data structure
+    // Handle various response formats and always return an array
+    let imageUrls: string[] = [];
+    
+    if (data.result && data.result.imageUrls && Array.isArray(data.result.imageUrls)) {
+      // Handle case where API returns multiple URLs in result.imageUrls
+      imageUrls = data.result.imageUrls;
+    } else if (data.imageUrls && Array.isArray(data.imageUrls)) {
       // Handle case where API returns an array of image URLs directly
-      return NextResponse.json({ imageUrl: data.imageUrls[0] });
-    } else if (Array.isArray(data.output) && data.output.length > 0) {
-      return NextResponse.json({ imageUrl: data.output[0] });
+      imageUrls = data.imageUrls;
+    } else if (Array.isArray(data.output)) {
+      // Handle case where API returns URLs in output array
+      imageUrls = data.output;
+    } else if (data.result && data.result.imageUrl) {
+      // Handle single URL in result.imageUrl
+      imageUrls = [data.result.imageUrl];
+    } else if (data.imageUrl) {
+      // Handle single URL directly in response
+      imageUrls = [data.imageUrl];
+    }
+    
+    // Always return imageUrls array, even if only one image
+    if (imageUrls.length > 0) {
+      return NextResponse.json({ 
+        imageUrls: imageUrls,
+        // Include the first URL as imageUrl for backward compatibility
+        imageUrl: imageUrls[0],
+        prompt: prompt // Include the prompt in the response
+      });
     } else {
-      console.error('Unexpected API response:', data);
+      console.error('No image URLs found in API response:', data);
       return NextResponse.json(
-        { error: 'Unexpected response from body generation service' }, 
+        { error: 'No image URLs returned from body generation service' }, 
         { status: 500 }
       );
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error during body generation:', error);
     return NextResponse.json(
-      { error: 'Internal server error' }, 
+      { error: error.message || 'Internal server error' }, 
       { status: 500 }
     );
   }
