@@ -4,6 +4,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import { getAuth, signOut } from 'firebase/auth';
 import firebase_app from '@/firebase/config';
 import { useState } from 'react';
+import UserCoins from '@/components/UserCoins';
 
 const auth = getAuth(firebase_app);
 
@@ -37,6 +38,12 @@ export default function Header() {
                 <Link href="/dashboard" className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">
                   Dashboard
                 </Link>
+                
+                {/* User Coins Display */}
+                <div className="px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
+                  <UserCoins showLabel={true} className="text-sm" />
+                </div>
+                
                 <button
                   onClick={handleSignOut}
                   className="btn btn-primary"
@@ -64,6 +71,11 @@ export default function Header() {
           
           {/* Mobile menu button */}
           <div className="flex items-center sm:hidden">
+            {user && (
+              <div className="mr-4">
+                <UserCoins showLabel={false} className="text-sm" />
+              </div>
+            )}
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
@@ -95,6 +107,12 @@ export default function Header() {
                 <Link href="/dashboard" className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">
                   Dashboard
                 </Link>
+                
+                {/* User Coins in Mobile Menu */}
+                <div className="flex items-center px-3 py-2 rounded-md text-base font-medium text-gray-700 bg-gray-50">
+                  <UserCoins showLabel={true} />
+                </div>
+                
                 <button
                   onClick={handleSignOut}
                   className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700"

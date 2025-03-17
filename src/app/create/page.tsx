@@ -211,99 +211,98 @@ export default function Create() {
       
       console.log('Sending request with data:', requestData);
       
-      // Call our API endpoint that connects to the worker
-      let response = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('API error:', errorData);
-        throw new Error(errorData.error || 'Failed to generate image');
-      }
-      
-      let data = await response.json();
-      console.log('API response:', data);
-      
-      // If we receive an immediate image URL, use it
-      if (data.imageUrl && typeof data.imageUrl === 'string') {
-        setPreviewImage(data.imageUrl);
-        setIsGenerating(false);
-        return;
-      }
-      
-      // If we need to poll for results
-      if (data.predictionId) {
-        let predictionId = data.predictionId;
-        let pollCount = 0;
-        const maxPolls = 30; // Limit polling attempts to avoid infinite loops
-        
-        // Poll for image every 2 seconds
-        const pollInterval = setInterval(async () => {
-          try {
-            pollCount++;
-            
-            if (pollCount > maxPolls) {
-              clearInterval(pollInterval);
-              throw new Error('Image generation timed out. Please try again.');
-            }
-            
-            // Poll the status of the prediction
-            const pollResponse = await fetch(`/api/poll-prediction?id=${predictionId}`);
-            
-            if (!pollResponse.ok) {
-              const errorData = await pollResponse.json();
-              console.error('Polling error:', errorData);
-              throw new Error(errorData.error || 'Failed to check image generation status');
-            }
-            
-            const pollData = await pollResponse.json();
-            console.log(`Polling attempt ${pollCount}:`, pollData);
-            
-            // If the prediction succeeded and we have an image URL
-            if (pollData.status === 'succeeded' && pollData.imageUrl) {
-              // Ensure the URL is correctly formatted
-              const imageUrl = pollData.imageUrl.trim();
-              console.log('Got image URL from polling:', imageUrl);
-              
-              // Force a small delay to ensure React can properly batch updates
-              setTimeout(() => {
-                // Set the preview image to the one from Replicate
-                setPreviewImage(imageUrl);
-                setHasGeneratedImage(true); // Mark that we have a generated image
-                
-                // Clear the interval and update UI state
-                clearInterval(pollInterval);
-                setIsGenerating(false);
-              }, 100);
-              
-              return;
-            }
-            
-            // If the prediction failed
-            if (pollData.status === 'failed') {
-              clearInterval(pollInterval);
-              throw new Error(pollData.error || 'Image generation failed');
-            }
-            
-            // If we've reached max polls but status is still processing
-            if (pollCount === maxPolls) {
-              clearInterval(pollInterval);
-              throw new Error('Image generation is taking too long. You can try again later.');
-            }
-          } catch (pollError: any) {
-            console.error('Error polling for image:', pollError);
-            clearInterval(pollInterval);
-            setErrorMessage(pollError.message || 'Failed to check image generation status');
-            setIsGenerating(false);
+      // For step 4, use both face and body generation APIs in sequence
+      if (step >= 4) {
+        try {
+          // First, generate the face
+          const faceResponse = await fetch('/api/generate-face', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData),
+          });
+          
+          if (!faceResponse.ok) {
+            const errorData = await faceResponse.json();
+            console.error('Face API error:', errorData);
+            throw new Error(errorData.error || 'Failed to generate face');
           }
-        }, 2000); // Poll every 2 seconds
+          
+          const faceData = await faceResponse.json();
+          console.log('Face API response:', faceData);
+          
+          if (!faceData.imageUrl) {
+            throw new Error('No face image URL returned');
+          }
+          
+          // Now generate the body using the face image URL
+          const bodyResponse = await fetch('/api/generate-body', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              ...requestData,
+              sourceImageUrl: faceData.imageUrl
+            }),
+          });
+          
+          if (!bodyResponse.ok) {
+            const errorData = await bodyResponse.json();
+            console.error('Body API error:', errorData);
+            throw new Error(errorData.error || 'Failed to generate body');
+          }
+          
+          const bodyData = await bodyResponse.json();
+          console.log('Body API response:', bodyData);
+          
+          if (bodyData.imageUrl) {
+            setPreviewImage(bodyData.imageUrl);
+            setIsGenerating(false);
+            return;
+          } else {
+            throw new Error('No body image URL returned');
+          }
+        } catch (error: any) {
+          console.error('Error in face/body generation:', error);
+          setErrorMessage(error.message || 'Failed to generate complete image');
+          setIsGenerating(false);
+          return;
+        }
       } else {
-        throw new Error('No prediction ID returned from the API');
+        // For all other steps, just use the face generation API
+        try {
+          const faceResponse = await fetch('/api/generate-face', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData),
+          });
+          
+          if (!faceResponse.ok) {
+            const errorData = await faceResponse.json();
+            console.error('Face API error:', errorData);
+            throw new Error(errorData.error || 'Failed to generate face');
+          }
+          
+          const faceData = await faceResponse.json();
+          console.log('Face API response:', faceData);
+          
+          if (faceData.imageUrl) {
+            setPreviewImage(faceData.imageUrl);
+            setIsGenerating(false);
+            return;
+          } else {
+            throw new Error('No face image URL returned');
+          }
+        } catch (error: any) {
+          console.error('Error generating face:', error);
+          setErrorMessage(error.message || 'Failed to generate face image');
+          setIsGenerating(false);
+          return;
+        }
       }
     } catch (error: any) {
       console.error('Error generating image:', error);
