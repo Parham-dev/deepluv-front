@@ -8,16 +8,7 @@ import Image from 'next/image';
 import {
   companionTypes,
   genderOptions,
-  ageOptions,
-  ethnicityOptions,
-  eyeColorOptions,
-  hairColorOptions,
-  hairStyleOptions,
-  bodyShapeOptions,
   breastSizeOptions,
-  buttSizeOptions,
-  faceOptions,
-  bodyOptions,
   personalityOptions,
   formSteps,
   getAgeOptions,
@@ -53,10 +44,6 @@ export default function Create() {
   
   const [name, setName] = useState('');
   const [personality, setPersonality] = useState<string[]>([]);
-  
-  // For backward compatibility
-  const [face, setFace] = useState('');
-  const [body, setBody] = useState('');
   
   // Preview image state (would be generated based on selections)
   const [previewImage, setPreviewImage] = useState('https://via.placeholder.com/400/333333/FFFFFF?text=AI+Preview');

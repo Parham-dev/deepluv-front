@@ -1,5 +1,3 @@
-import { ethnicityOptions, hairStyleOptions } from './options';
-
 /**
  * Get the appropriate image path based on option type and gender
  * @param type The type of option (e.g., 'age', 'ethnicity')
@@ -15,31 +13,31 @@ export const getImagePath = (
 ): string => {
   // Step 1 options (types and gender) are unisex
   if (type === 'types' || type === 'gender') {
-    return `/images/companions/${type}/${id}.jpg`;
+    return `/images/companions/${type}/${id}.webp`;
   }
   
   // Personality is unisex
   if (type === 'personality') {
-    return `/images/companions/${type}/${id}.jpg`;
+    return `/images/companions/${type}/${id}.webp`;
   }
   
   // Female-only options
   if (type === 'breast') {
-    return `/images/companions/body/${type}/${id}.jpg`;
+    return `/images/companions/body/${type}/${id}.webp`;
   }
   
   // Face-related options with gender variations
   if (type === 'eyes' || type === 'hair-color' || type === 'hair-style') {
-    return `/images/companions/face/${type}/${gender || 'female'}/${id}.jpg`;
+    return `/images/companions/face/${type}/${gender || 'female'}/${id}.webp`;
   }
   
   // Body-related options with gender variations
   if (type === 'body-shape' || type === 'butt') {
-    return `/images/companions/body/${type === 'body-shape' ? 'shape' : type}/${gender || 'female'}/${id}.jpg`;
+    return `/images/companions/body/${type === 'body-shape' ? 'shape' : type}/${gender || 'female'}/${id}.webp`;
   }
   
   // Age and ethnicity
-  return `/images/companions/${type}/${gender || 'female'}/${id}.jpg`;
+  return `/images/companions/${type}/${gender || 'female'}/${id}.webp`;
 };
 
 /**
@@ -56,13 +54,18 @@ export const getGenderSpecificImage = (baseUrl: string, gender?: string): string
  * Filter options based on selected gender
  * @param options Array of options to filter
  * @param gender Selected gender
+ * @param optionType Type of options being filtered
  * @returns Filtered array based on gender
  */
-export const getGenderFilteredOptions = (options: any[], gender?: string): any[] => {
+export const getGenderFilteredOptions = (
+  options: any[], 
+  gender?: string, 
+  optionType?: 'ethnicity' | 'hair-style'
+): any[] => {
   if (!gender) return options;
   
   // Filter ethnicity options - Latina only for female, etc.
-  if (options === ethnicityOptions) {
+  if (optionType === 'ethnicity') {
     return options.filter(option => {
       if (gender === 'female' && option.id === 'latina') return true;
       if (gender === 'male' && option.id === 'latina') return false;
@@ -71,7 +74,7 @@ export const getGenderFilteredOptions = (options: any[], gender?: string): any[]
   }
   
   // Filter hair style options - some styles may be gender-specific
-  if (options === hairStyleOptions) {
+  if (optionType === 'hair-style') {
     return options.filter(option => {
       if (gender === 'male' && ['pixie-cut', 'high-ponytail'].includes(option.id)) return false;
       return true;

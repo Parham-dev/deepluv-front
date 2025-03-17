@@ -139,30 +139,6 @@ export const personalityOptions = [
   { id: 'confident', name: 'Confident', image: getImagePath('personality', 'confident') }
 ];
 
-// Legacy options for backward compatibility
-export const ageOptions = getAgeOptions();
-export const ethnicityOptions = getEthnicityOptions();
-export const eyeColorOptions = getEyeColorOptions();
-export const hairColorOptions = getHairColorOptions();
-export const hairStyleOptions = getHairStyleOptions();
-export const bodyShapeOptions = getBodyShapeOptions();
-export const buttSizeOptions = getButtSizeOptions();
-
-// Legacy face and body options
-export const faceOptions = [
-  { id: 'face1', name: 'Face 1', image: '/images/companions/face/face1.jpg' },
-  { id: 'face2', name: 'Face 2', image: '/images/companions/face/face2.jpg' },
-  { id: 'face3', name: 'Face 3', image: '/images/companions/face/face3.jpg' },
-  { id: 'face4', name: 'Face 4', image: '/images/companions/face/face4.jpg' }
-];
-
-export const bodyOptions = [
-  { id: 'athletic', name: 'Athletic', image: '/images/companions/body/athletic.jpg' },
-  { id: 'slim', name: 'Slim', image: '/images/companions/body/slim.jpg' },
-  { id: 'curvy', name: 'Curvy', image: '/images/companions/body/curvy.jpg' },
-  { id: 'muscular', name: 'Muscular', image: '/images/companions/body/muscular.jpg' }
-];
-
 // Define the steps
 export const formSteps = [
   { name: 'Type & Gender', number: 1 },
