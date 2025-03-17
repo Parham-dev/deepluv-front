@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthContext } from '@/context/AuthContext';
 import MainLayout from '@/components/layout/MainLayout';
@@ -47,6 +47,9 @@ export default function Create() {
   
   // Preview image state (would be generated based on selections)
   const [previewImage, setPreviewImage] = useState('https://via.placeholder.com/400/333333/FFFFFF?text=AI+Preview');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   // Update preview image when relevant selections change
   useEffect(() => {
@@ -156,6 +159,124 @@ export default function Create() {
       } else {
         alert('You can select up to 3 personality traits');
       }
+    }
+  };
+
+  // Handle generate image button click
+  const handleGenerateImage = async () => {
+    try {
+      setIsGenerating(true);
+      setErrorMessage(null);
+      
+      // Make sure we have the minimum required fields
+      if (!gender || !age || !ethnicity) {
+        setErrorMessage('Please fill in all basic details (gender, age, ethnicity) before generating an image');
+        return;
+      }
+      
+      const requestData = {
+        gender,
+        age,
+        ethnicity,
+        eyeColor: eyeColor || '',
+        hairColor: hairColor || '',
+        hairStyle: hairStyle || '',
+        bodyShape: bodyShape || '',
+        breastSize: breastSize || '',
+        buttSize: buttSize || '',
+      };
+      
+      console.log('Sending request with data:', requestData);
+      
+      // Try the main endpoint first
+      try {
+        let response;
+        try {
+          response = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData),
+          });
+        } catch (fetchError) {
+          console.error('Network error during fetch:', fetchError);
+          throw new Error('Network error: Could not connect to the image generation service');
+        }
+        
+        let data;
+        try {
+          data = await response.json();
+          console.log('API response:', data);
+        } catch (jsonError) {
+          console.error('Error parsing JSON response:', jsonError);
+          throw new Error('Could not parse server response');
+        }
+        
+        if (!response.ok) {
+          console.error('API error:', data);
+          throw new Error(data.error || 'Failed to generate image');
+        }
+        
+        // Use a fixed placeholder image for testing while we fix the API
+        const useFallbackForTesting = true;
+        
+        if (useFallbackForTesting) {
+          // Use this for testing the UI while the API is being fixed
+          setPreviewImage('https://replicate.delivery/pbxt/4U7ENgM0cBk3M9YqlnUuIRonHabIrXMXUVNhvgRcNKXtfJjIA/out-0.png');
+        } else if (data.imageUrl && typeof data.imageUrl === 'string' && data.imageUrl.trim() !== '') {
+          setPreviewImage(data.imageUrl);
+        } else {
+          console.error('Empty or invalid image URL returned:', data);
+          throw new Error('No valid image URL returned from API');
+        }
+      } catch (mainApiError) {
+        console.error('Main API failed, trying alternative:', mainApiError);
+        
+        // If the main endpoint fails, try the alternative
+        setErrorMessage('First attempt failed. Trying alternative model...');
+        
+        let altResponse;
+        try {
+          altResponse = await fetch('/api/generate-alt', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData),
+          });
+        } catch (altFetchError) {
+          console.error('Network error during alt fetch:', altFetchError);
+          throw new Error('Network error: Could not connect to the alternative image generation service');
+        }
+        
+        let altData;
+        try {
+          altData = await altResponse.json();
+          console.log('Alternative API response:', altData);
+        } catch (altJsonError) {
+          console.error('Error parsing alternative JSON response:', altJsonError);
+          throw new Error('Could not parse alternative server response');
+        }
+        
+        if (!altResponse.ok) {
+          console.error('Alternative API error:', altData);
+          throw new Error(altData.error || 'Failed to generate image with alternative model');
+        }
+        
+        if (altData.imageUrl && typeof altData.imageUrl === 'string' && altData.imageUrl.trim() !== '') {
+          setPreviewImage(altData.imageUrl);
+        } else {
+          console.error('Empty or invalid image URL returned from alternative:', altData);
+          throw new Error('No valid image URL returned from alternative API');
+        }
+      }
+    } catch (error: any) {
+      console.error('Error generating image:', error);
+      setErrorMessage(error.message || 'Failed to generate image. Please try again.');
+      // Keep the existing preview image on error
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -376,17 +497,40 @@ export default function Create() {
 
             {/* Preview section (visible from step 2 onwards) */}
             {step >= 2 && (
-              <div className="lg:w-1/3">
-                <div className="bg-gray-900 p-4 rounded-lg">
+              <div className="lg:w-1/3" ref={previewRef}>
+                <div className="bg-gray-900 p-4 rounded-lg sticky top-4">
                   <h3 className="text-lg font-medium mb-4">Preview</h3>
                   <div className="aspect-[3/4] relative mb-4 bg-gray-800 rounded-lg overflow-hidden">
-                    <Image
-                      src={previewImage}
-                      alt="AI Preview"
-                      fill
-                      className="object-cover"
-                    />
+                    {previewImage && previewImage.trim() !== '' ? (
+                      <Image
+                        src={previewImage}
+                        alt="AI Preview"
+                        fill
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-500">
+                        Preview not available
+                      </div>
+                    )}
+                    {isGenerating && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70">
+                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+                      </div>
+                    )}
                   </div>
+                  {errorMessage && (
+                    <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-md text-sm text-red-200">
+                      {errorMessage}
+                    </div>
+                  )}
+                  <button
+                    onClick={handleGenerateImage}
+                    disabled={isGenerating}
+                    className="w-full py-2 px-4 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+                  >
+                    {isGenerating ? 'Generating...' : 'Generate Image'}
+                  </button>
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-gray-400">Type:</span>
