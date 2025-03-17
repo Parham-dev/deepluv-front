@@ -1,138 +1,118 @@
-import { NextResponse } from 'next/server';
-import Replicate from 'replicate';
+import { NextRequest, NextResponse } from 'next/server';
 
-// Initialize Replicate client - API key will be automatically loaded from environment variable
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
-});
-
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    // Check if API token is available
-    if (!process.env.REPLICATE_API_TOKEN) {
-      console.error("Missing Replicate API token");
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Configuration error: Missing Replicate API token' 
-      }, { status: 500 });
-    }
-
-    // Parse request body
-    const body = await request.json();
-    console.log("Request body:", JSON.stringify(body));
+    // Parse the request body
+    const requestData = await request.json();
     
-    const {
-      gender,
-      age,
-      ethnicity,
-      eyeColor,
-      hairColor,
-      hairStyle,
-      bodyShape,
-      breastSize,
-      buttSize,
-    } = body;
-
-    // Validate required fields
-    if (!gender || !age || !ethnicity) {
-      console.error("Missing required fields");
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Missing required fields: gender, age, and ethnicity are required' 
-      }, { status: 400 });
-    }
-
-    // Create a prompt for the model based on selected attributes
-    let prompt = `A photorealistic portrait of a ${age} ${ethnicity} ${gender} with ${eyeColor} eyes, `;
-    prompt += `${hairColor} ${hairStyle} hair, ${bodyShape} body type`;
+    // API endpoint for the worker - changed from predictions to models with the Flux Schnell model ID
+    const workerUrl = 'https://still-credit-a864.didarapp-com.workers.dev/models/black-forest-labs/flux-schnell/predictions';
     
-    if (gender === 'female' && breastSize) {
-      prompt += `, ${breastSize} breast size`;
-    }
-    
-    if (buttSize) {
-      prompt += `, ${buttSize} butt size`;
-    }
-    
-    prompt += `. High quality, detailed, smooth lighting, professional photography.`;
-    console.log("Generated prompt:", prompt);
-
-    // Define negative prompt to avoid unwanted elements
-    const negativePrompt = "deformed, distorted, disfigured, poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, disconnected limbs, mutation, mutated, ugly, disgusting, amputation";
-
-    // Run the model with the prompt
-    console.log("Calling Replicate API...");
-    try {
-      console.log("About to call Replicate API with token:", process.env.REPLICATE_API_TOKEN ? "present" : "missing");
-      
-      // Create the input object
-      const input = {
-        prompt: prompt,
-        negative_prompt: negativePrompt,
+    // Define the Flux Schnell model parameters based on the user's selections
+    const modelParams = {
+      input: {
+        prompt: generatePrompt(requestData),
         num_outputs: 1,
-        num_inference_steps: 4
-      };
-      
-      console.log("Input to Replicate:", input);
-      
-      // Call the model with the simplified approach
-      const output = await replicate.run("black-forest-labs/flux-schnell", { input });
-      
-      console.log("Replicate API response received, type:", typeof output);
-      console.log("Response is array:", Array.isArray(output));
-      if (Array.isArray(output)) {
-        console.log("Array length:", output.length);
-        if (output.length > 0) {
-          console.log("First item type:", typeof output[0]);
-          console.log("First item preview:", typeof output[0] === 'string' ? output[0].substring(0, 100) : JSON.stringify(output[0]).substring(0, 100));
+        negative_prompt: "deformed, distorted, disfigured, poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, mutated hands and fingers, disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation"
+      }
+    };
+    
+    // Make a request to the worker
+    const response = await fetch(workerUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(modelParams),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Worker API error:', errorData);
+      return NextResponse.json(
+        { error: 'Failed to generate image' }, 
+        { status: response.status }
+      );
+    }
+    
+    // Get the response from the worker
+    const data = await response.json();
+    
+    // Check if the prediction is completed or if we need to poll for results
+    if (data.status === 'succeeded' && data.output && data.output.length > 0) {
+      return NextResponse.json({ imageUrl: data.output[0] }, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         }
-      }
-      
-      // Extract image URL from output and ensure it's a string
-      let imageUrl = null;
-      if (Array.isArray(output) && output.length > 0) {
-        imageUrl = typeof output[0] === 'string' ? output[0] : null;
-      } else if (typeof output === 'string') {
-        imageUrl = output;
-      } else if (output && typeof output === 'object') {
-        // Some models might return objects with different structures
-        console.log("Unexpected output format, trying to extract URL:", output);
-        // Try to look for a URL-like string in the object
-        const outputStr = JSON.stringify(output);
-        const urlMatch = outputStr.match(/(https?:\/\/[^\s"']+\.(?:jpg|jpeg|png|webp))/i);
-        if (urlMatch && urlMatch[0]) {
-          imageUrl = urlMatch[0];
-        }
-      }
-      
-      if (!imageUrl || typeof imageUrl !== 'string' || imageUrl === '') {
-        console.error("Empty or missing image URL in Replicate response:", output);
-        return NextResponse.json({ 
-          success: false, 
-          error: 'No valid image generated from the model',
-          output: output,
-          outputType: typeof output,
-          isArray: Array.isArray(output),
-          length: Array.isArray(output) ? output.length : 'n/a'
-        }, { status: 500 });
-      }
-
-      // Return the generated image URL
-      return NextResponse.json({ success: true, imageUrl });
-    } catch (replicateError: any) {
-      console.error("Replicate API error:", replicateError);
+      });
+    } else if (data.status === 'processing' || data.status === 'starting') {
+      // Return the prediction ID for polling
       return NextResponse.json({ 
-        success: false, 
-        error: `Replicate API error: ${replicateError.message || 'Unknown error'}`,
-        details: replicateError
-      }, { status: 500 });
+        predictionId: data.id,
+        status: data.status,
+        message: 'Image generation in progress, polling required'
+      }, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        }
+      });
+    } else {
+      console.error('Unexpected worker response:', data);
+      return NextResponse.json(
+        { error: 'Unexpected response from image generation service' }, 
+        { status: 500 }
+      );
     }
   } catch (error) {
-    console.error('Error in generate-image API route:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to generate image',
-      details: error instanceof Error ? error.message : String(error)
-    }, { status: 500 });
+    console.error('Error during image generation:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' }, 
+      { status: 500 }
+    );
   }
+}
+
+// Helper function to generate a prompt based on user selections
+function generatePrompt(data: any): string {
+  const {
+    gender,
+    age,
+    ethnicity,
+    eyeColor,
+    hairColor,
+    hairStyle,
+    bodyShape,
+    breastSize,
+    buttSize
+  } = data;
+  
+  let prompt = `A photorealistic portrait of a ${age} year old ${ethnicity} ${gender}`;
+  
+  // Add facial features
+  if (eyeColor) prompt += ` with ${eyeColor} eyes`;
+  if (hairColor && hairStyle) {
+    prompt += `, ${hairColor} ${hairStyle} hair`;
+  } else if (hairColor) {
+    prompt += `, ${hairColor} hair`;
+  } else if (hairStyle) {
+    prompt += `, ${hairStyle} hair`;
+  }
+  
+  // Add body features
+  if (bodyShape) prompt += `, ${bodyShape} body shape`;
+  
+  // Add gender-specific features
+  if (gender.toLowerCase() === 'female') {
+    if (breastSize) prompt += `, ${breastSize} breast size`;
+    if (buttSize) prompt += `, ${buttSize} butt size`;
+  }
+  
+  // Additional quality keywords
+  prompt += ", high quality, detailed, 4k, intricate, highly detailed";
+  
+  return prompt;
 } 

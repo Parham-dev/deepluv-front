@@ -46,24 +46,45 @@ export default function Create() {
   const [personality, setPersonality] = useState<string[]>([]);
   
   // Preview image state (would be generated based on selections)
-  const [previewImage, setPreviewImage] = useState('https://via.placeholder.com/400/333333/FFFFFF?text=AI+Preview');
+  const [previewImage, setPreviewImage] = useState('https://placehold.co/400x500/333333/FFFFFF?text=Preview');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [hasGeneratedImage, setHasGeneratedImage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  // Debug effect to log when preview image changes
+  useEffect(() => {
+    console.log('Preview image updated:', previewImage);
+    if (previewImage.includes('replicate.delivery')) {
+      setHasGeneratedImage(true);
+    }
+  }, [previewImage]);
 
   // Update preview image when relevant selections change
   useEffect(() => {
     if (step >= 2) {
-      // In a real app, this would call an API to generate the image
-      // For now, we'll just update the placeholder
-      const params = getPreviewParams({
-        gender, age, ethnicity, eyeColor, hairColor, 
-        hairStyle, bodyShape, breastSize, buttSize
-      });
-      
-      setPreviewImage(`https://via.placeholder.com/400/333333/FFFFFF?text=AI+Preview+${params.join('+')}`);
+      // Only update the placeholder if we're not in the middle of generation
+      // AND if the current image is not from replicate.delivery (a generated image)
+      // AND if we haven't already generated an image
+      if (!isGenerating && !previewImage.includes('replicate.delivery') && !hasGeneratedImage) {
+        try {
+          // In a real app, this would call an API to generate the image
+          // For now, we'll just update the placeholder
+          const params = getPreviewParams({
+            gender, age, ethnicity, eyeColor, hairColor, 
+            hairStyle, bodyShape, breastSize, buttSize
+          });
+          
+          // Use placehold.co instead of via.placeholder.com which has DNS issues
+          setPreviewImage(`https://placehold.co/400x500/333333/FFFFFF?text=Preview`);
+        } catch (error) {
+          console.error('Error updating preview image:', error);
+          // Use a fallback image that will definitely work
+          setPreviewImage(`https://placehold.co/400x500/333333/FFFFFF?text=Preview`);
+        }
+      }
     }
-  }, [step, gender, age, ethnicity, eyeColor, hairColor, hairStyle, bodyShape, breastSize, buttSize]);
+  }, [step, gender, age, ethnicity, eyeColor, hairColor, hairStyle, bodyShape, breastSize, buttSize, isGenerating, previewImage]);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -167,10 +188,12 @@ export default function Create() {
     try {
       setIsGenerating(true);
       setErrorMessage(null);
+      setHasGeneratedImage(false); // Reset the generated image flag
       
       // Make sure we have the minimum required fields
       if (!gender || !age || !ethnicity) {
         setErrorMessage('Please fill in all basic details (gender, age, ethnicity) before generating an image');
+        setIsGenerating(false);
         return;
       }
       
@@ -188,94 +211,103 @@ export default function Create() {
       
       console.log('Sending request with data:', requestData);
       
-      // Try the main endpoint first
-      try {
-        let response;
-        try {
-          response = await fetch('/api/generate-image', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestData),
-          });
-        } catch (fetchError) {
-          console.error('Network error during fetch:', fetchError);
-          throw new Error('Network error: Could not connect to the image generation service');
-        }
+      // Call our API endpoint that connects to the worker
+      let response = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API error:', errorData);
+        throw new Error(errorData.error || 'Failed to generate image');
+      }
+      
+      let data = await response.json();
+      console.log('API response:', data);
+      
+      // If we receive an immediate image URL, use it
+      if (data.imageUrl && typeof data.imageUrl === 'string') {
+        setPreviewImage(data.imageUrl);
+        setIsGenerating(false);
+        return;
+      }
+      
+      // If we need to poll for results
+      if (data.predictionId) {
+        let predictionId = data.predictionId;
+        let pollCount = 0;
+        const maxPolls = 30; // Limit polling attempts to avoid infinite loops
         
-        let data;
-        try {
-          data = await response.json();
-          console.log('API response:', data);
-        } catch (jsonError) {
-          console.error('Error parsing JSON response:', jsonError);
-          throw new Error('Could not parse server response');
-        }
-        
-        if (!response.ok) {
-          console.error('API error:', data);
-          throw new Error(data.error || 'Failed to generate image');
-        }
-        
-        // Use a fixed placeholder image for testing while we fix the API
-        const useFallbackForTesting = true;
-        
-        if (useFallbackForTesting) {
-          // Use this for testing the UI while the API is being fixed
-          setPreviewImage('https://replicate.delivery/pbxt/4U7ENgM0cBk3M9YqlnUuIRonHabIrXMXUVNhvgRcNKXtfJjIA/out-0.png');
-        } else if (data.imageUrl && typeof data.imageUrl === 'string' && data.imageUrl.trim() !== '') {
-          setPreviewImage(data.imageUrl);
-        } else {
-          console.error('Empty or invalid image URL returned:', data);
-          throw new Error('No valid image URL returned from API');
-        }
-      } catch (mainApiError) {
-        console.error('Main API failed, trying alternative:', mainApiError);
-        
-        // If the main endpoint fails, try the alternative
-        setErrorMessage('First attempt failed. Trying alternative model...');
-        
-        let altResponse;
-        try {
-          altResponse = await fetch('/api/generate-alt', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestData),
-          });
-        } catch (altFetchError) {
-          console.error('Network error during alt fetch:', altFetchError);
-          throw new Error('Network error: Could not connect to the alternative image generation service');
-        }
-        
-        let altData;
-        try {
-          altData = await altResponse.json();
-          console.log('Alternative API response:', altData);
-        } catch (altJsonError) {
-          console.error('Error parsing alternative JSON response:', altJsonError);
-          throw new Error('Could not parse alternative server response');
-        }
-        
-        if (!altResponse.ok) {
-          console.error('Alternative API error:', altData);
-          throw new Error(altData.error || 'Failed to generate image with alternative model');
-        }
-        
-        if (altData.imageUrl && typeof altData.imageUrl === 'string' && altData.imageUrl.trim() !== '') {
-          setPreviewImage(altData.imageUrl);
-        } else {
-          console.error('Empty or invalid image URL returned from alternative:', altData);
-          throw new Error('No valid image URL returned from alternative API');
-        }
+        // Poll for image every 2 seconds
+        const pollInterval = setInterval(async () => {
+          try {
+            pollCount++;
+            
+            if (pollCount > maxPolls) {
+              clearInterval(pollInterval);
+              throw new Error('Image generation timed out. Please try again.');
+            }
+            
+            // Poll the status of the prediction
+            const pollResponse = await fetch(`/api/poll-prediction?id=${predictionId}`);
+            
+            if (!pollResponse.ok) {
+              const errorData = await pollResponse.json();
+              console.error('Polling error:', errorData);
+              throw new Error(errorData.error || 'Failed to check image generation status');
+            }
+            
+            const pollData = await pollResponse.json();
+            console.log(`Polling attempt ${pollCount}:`, pollData);
+            
+            // If the prediction succeeded and we have an image URL
+            if (pollData.status === 'succeeded' && pollData.imageUrl) {
+              // Ensure the URL is correctly formatted
+              const imageUrl = pollData.imageUrl.trim();
+              console.log('Got image URL from polling:', imageUrl);
+              
+              // Force a small delay to ensure React can properly batch updates
+              setTimeout(() => {
+                // Set the preview image to the one from Replicate
+                setPreviewImage(imageUrl);
+                setHasGeneratedImage(true); // Mark that we have a generated image
+                
+                // Clear the interval and update UI state
+                clearInterval(pollInterval);
+                setIsGenerating(false);
+              }, 100);
+              
+              return;
+            }
+            
+            // If the prediction failed
+            if (pollData.status === 'failed') {
+              clearInterval(pollInterval);
+              throw new Error(pollData.error || 'Image generation failed');
+            }
+            
+            // If we've reached max polls but status is still processing
+            if (pollCount === maxPolls) {
+              clearInterval(pollInterval);
+              throw new Error('Image generation is taking too long. You can try again later.');
+            }
+          } catch (pollError: any) {
+            console.error('Error polling for image:', pollError);
+            clearInterval(pollInterval);
+            setErrorMessage(pollError.message || 'Failed to check image generation status');
+            setIsGenerating(false);
+          }
+        }, 2000); // Poll every 2 seconds
+      } else {
+        throw new Error('No prediction ID returned from the API');
       }
     } catch (error: any) {
       console.error('Error generating image:', error);
       setErrorMessage(error.message || 'Failed to generate image. Please try again.');
-      // Keep the existing preview image on error
-    } finally {
       setIsGenerating(false);
     }
   };
@@ -507,6 +539,16 @@ export default function Create() {
                         alt="AI Preview"
                         fill
                         className="object-cover"
+                        unoptimized
+                        onError={(e) => {
+                          console.error('Image failed to load:', previewImage);
+                          // Only set fallback for non-Replicate images
+                          if (!previewImage.includes('replicate.delivery')) {
+                            setPreviewImage('https://placehold.co/400x500/333333/FFFFFF?text=Preview');
+                          }
+                        }}
+                        sizes="(max-width: 768px) 100vw, 33vw"
+                        priority={previewImage.includes('replicate.delivery')}
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-500">
