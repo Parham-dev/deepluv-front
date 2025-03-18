@@ -150,8 +150,12 @@ function generatePrompt(data: any): string {
   } = data;
   
   // Start with the same base prompt format as the face API
-  let prompt = `A photorealistic full body image of a ${age} year old ${ethnicity} ${gender}. wearing a fancy clothing.`;
-  
+  let prompt = `A realistic full body image of a ${age} year old ${ethnicity} ${gender}. `;
+  if (gender.toLowerCase() === 'female') {
+    prompt += `wearing a nice dress.`;
+  } else {
+    prompt += `wearing a nice suits.`;
+  }
   // Add body features with the same sentence structure as face API
   if (bodyShape) prompt += ` with ${bodyShape} body shape`;
   

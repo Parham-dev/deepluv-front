@@ -133,7 +133,7 @@ function generatePrompt(data: any): string {
     hairStyle
   } = data;
   
-  let prompt = `A photorealistic portrait of a ${age} year old ${ethnicity} ${gender}`;
+  let prompt = `A realistic portrait of a ${age} year old ${ethnicity} ${gender}`;
   
   // Add facial features
   if (eyeColor) prompt += ` with ${eyeColor} eyes`;
