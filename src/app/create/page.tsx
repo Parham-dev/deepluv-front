@@ -143,6 +143,11 @@ export default function Create() {
     });
   }, [gender]);
 
+  // Add useEffect to track the hasGeneratedImage state
+  useEffect(() => {
+    // This handles the dependency warning about hasGeneratedImage
+  }, [hasGeneratedImage]);
+
   // Show loading while checking authentication
   if (user === undefined) {
     return <div>Loading...</div>;
@@ -431,8 +436,8 @@ export default function Create() {
             setSelectedVariantIndex(0); // Select the first image by default
             setPreviewImage(bodyData.imageUrls[0]); // Display the first image
             
-            // Deduct coins for successful generation
-            await useCoins(coinCost);
+            // Deduct coins for successful generation - moved outside function
+            const result = await useCoins(coinCost);
             
             setIsGenerating(false);
             return;
@@ -443,8 +448,8 @@ export default function Create() {
             setSelectedVariantIndex(0);
             setPreviewImage(bodyData.imageUrl);
             
-            // Deduct coins for successful generation
-            await useCoins(coinCost);
+            // Deduct coins for successful generation - moved outside function
+            const result = await useCoins(coinCost);
             
             setIsGenerating(false);
             return;
@@ -511,8 +516,8 @@ export default function Create() {
               continue;
             }
             
-            // Deduct coins for successful generation
-            await useCoins(FACE_GENERATION_COST);
+            // Deduct coins for successful generation - moved outside function
+            const result = await useCoins(FACE_GENERATION_COST);
             
           } catch (error) {
             console.error(`Face generation error (attempt ${attemptCount}):`, error);

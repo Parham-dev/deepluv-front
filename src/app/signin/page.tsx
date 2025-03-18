@@ -163,7 +163,7 @@ function Page(): React.ReactNode {
             </div>
             
             <div className="text-sm text-center text-gray-600 mt-4">
-              <p>Don't have an account? <Link href="/signup" className="text-blue-500 hover:text-blue-700">Sign up</Link></p>
+              <p>Don&apos;t have an account? <Link href="/signup" className="text-blue-500 hover:text-blue-700">Sign up</Link></p>
             </div>
             
             <div className="text-xs text-gray-500 text-center mt-6">

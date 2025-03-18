@@ -18,12 +18,18 @@ const nextConfig = {
         protocol: 'https',
         hostname: '*.replicate.delivery',
       },
+      {
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com',
+      },
     ],
-    unoptimized: process.env.NODE_ENV === 'development',
+    unoptimized: true,
   },
   experimental: {
-    serverComponentsExternalPackages: ['replicate'],
   },
+  serverExternalPackages: ['replicate'],
+  output: 'export',
+  trailingSlash: true,
 }
 
 module.exports = nextConfig
