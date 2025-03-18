@@ -1,5 +1,6 @@
 'use client'
 import signIn from "@/firebase/auth/signIn";
+import signInWithGoogle from "@/firebase/auth/googleAuth";
 import { useRouter } from 'next/navigation';
 import { useState } from "react";
 import Link from 'next/link';
@@ -67,18 +68,31 @@ function Page(): React.ReactNode {
     setIsLoading(true);
     
     try {
-      // Placeholder for Google sign-in functionality
-      console.log("Google sign-in clicked");
-      // Implement Google sign-in logic here
+      const { result, error } = await signInWithGoogle();
       
-      // Simulate a delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (error) {
+        // Handle specific Firebase errors
+        const firebaseError = error as FirebaseError;
+        const errorMessage = 
+          firebaseError.code === 'auth/popup-closed-by-user'
+            ? 'Google sign-in was cancelled. Please try again.'
+            : firebaseError.code === 'auth/popup-blocked'
+              ? 'Pop-up was blocked by the browser. Please allow pop-ups for this site.'
+              : firebaseError.message || 'An error occurred during Google sign-in. Please try again.';
+        
+        setError(errorMessage);
+        console.log(error);
+        return;
+      }
       
-      // For now, just show an error since it's not implemented
-      setError("Google sign-in is not implemented yet");
+      // Google sign-in successful
+      console.log(result);
+      
+      // Redirect to the admin page
+      router.push("/admin");
     } catch (err) {
       console.error(err);
-      setError("An error occurred with Google sign-in");
+      setError("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }

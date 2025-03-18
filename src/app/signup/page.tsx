@@ -1,5 +1,6 @@
 'use client'
 import signUp from "@/firebase/auth/signup";
+import signInWithGoogle from "@/firebase/auth/googleAuth";
 import { useRouter } from 'next/navigation';
 import { useState } from "react";
 import Link from 'next/link';
@@ -20,22 +21,22 @@ const auth = getAuth(firebase_app);
 function Page(): React.ReactNode {
   const [ email, setEmail ] = useState( '' );
   const [ password, setPassword ] = useState( '' );
+  const [ confirmPassword, setConfirmPassword ] = useState( '' );
   const [ error, setError ] = useState<string | null>( null );
   const [ isLoading, setIsLoading ] = useState( false );
   const router = useRouter();
 
-  // Handle form submission
   const handleForm = async ( event: { preventDefault: () => void } ) => {
     event.preventDefault();
     setError(null);
-    
-    // Validate password
-    if (password.length < 6) {
-      setError("Password should be at least 6 characters");
+    setIsLoading(true);
+
+    // Validate passwords match
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      setIsLoading(false);
       return;
     }
-    
-    setIsLoading(true);
 
     try {
       // Attempt to sign up with provided email and password
@@ -45,21 +46,18 @@ function Page(): React.ReactNode {
         // Handle specific Firebase errors
         const firebaseError = error as FirebaseError;
         const errorMessage = 
-          firebaseError.code === 'auth/email-already-in-use' 
-            ? 'Email already in use. Please try another email address.' 
+          firebaseError.code === 'auth/email-already-in-use'
+            ? 'This email is already registered. Try signing in instead.'
             : firebaseError.code === 'auth/invalid-email'
-              ? 'Invalid email address. Please enter a valid email.'
+              ? 'Invalid email format. Please check your email.'
               : firebaseError.code === 'auth/weak-password'
-                ? 'Password should be at least 6 characters'
+                ? 'Password is too weak. Please use a stronger password.'
                 : firebaseError.message || 'An error occurred. Please try again.';
         
         setError(errorMessage);
         console.log(error);
         return;
       }
-
-      // Sign up successful
-      console.log( result );
 
       // Create user in Firestore with 20 initial coins
       if (result && result.user) {
@@ -95,18 +93,50 @@ function Page(): React.ReactNode {
     setIsLoading(true);
     
     try {
-      // Placeholder for Google sign-up functionality
-      console.log("Google sign-up clicked");
-      // Implement Google sign-up logic here
+      const { result, error } = await signInWithGoogle();
       
-      // Simulate a delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (error) {
+        // Handle specific Firebase errors
+        const firebaseError = error as FirebaseError;
+        const errorMessage = 
+          firebaseError.code === 'auth/popup-closed-by-user'
+            ? 'Google sign-up was cancelled. Please try again.'
+            : firebaseError.code === 'auth/popup-blocked'
+              ? 'Pop-up was blocked by the browser. Please allow pop-ups for this site.'
+              : firebaseError.message || 'An error occurred during Google sign-up. Please try again.';
+        
+        setError(errorMessage);
+        console.log(error);
+        return;
+      }
       
-      // For now, just show an error since it's not implemented
-      setError("Google sign-up is not implemented yet");
+      // Google sign-up successful
+      console.log(result);
+      
+      // Create user in Firestore with 20 initial coins
+      if (result && result.user) {
+        try {
+          const { userData, error: userError } = await createOrGetUser(result.user);
+          
+          if (userError) {
+            console.error("Error creating user data:", userError);
+            setError("Account created but there was an issue setting up your profile.");
+            return;
+          }
+          
+          console.log("User created with data:", userData);
+        } catch (err) {
+          console.error("Error in user creation:", err);
+          setError("Account created but there was an issue setting up your profile.");
+          return;
+        }
+      }
+      
+      // Redirect to the admin page
+      router.push("/admin");
     } catch (err) {
       console.error(err);
-      setError("An error occurred with Google sign-up");
+      setError("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -116,8 +146,8 @@ function Page(): React.ReactNode {
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900">Join us today</h1>
-          <p className="text-gray-600 mt-2">Create your account to get started</p>
+          <h1 className="text-4xl font-bold text-gray-900">Create Account</h1>
+          <p className="text-gray-600 mt-2">Sign up to start using DeepLuv</p>
         </div>
         
         <div className="bg-white shadow-md rounded-lg px-8 pt-6 pb-8 mb-4">
@@ -152,11 +182,25 @@ function Page(): React.ReactNode {
                 type="password"
                 name="password"
                 id="password"
-                placeholder="password (min. 6 characters)"
-                className="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                placeholder="********"
                 minLength={6}
+                className="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
               />
-              <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
+            </div>
+            <div>
+              <label htmlFor="confirmPassword" className="block text-gray-700 text-sm font-bold mb-2">
+                Confirm Password
+              </label>
+              <input
+                onChange={( e ) => setConfirmPassword( e.target.value )}
+                required
+                type="password"
+                name="confirmPassword"
+                id="confirmPassword"
+                placeholder="********"
+                minLength={6}
+                className="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              />
             </div>
             
             <div>
@@ -165,7 +209,7 @@ function Page(): React.ReactNode {
                 disabled={isLoading}
                 className={`w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded transition duration-200 ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
-                {isLoading ? 'Creating Account...' : 'Create Account'}
+                {isLoading ? 'Creating Account...' : 'Sign Up'}
               </button>
             </div>
 
