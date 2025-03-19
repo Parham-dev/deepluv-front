@@ -78,6 +78,10 @@ export default function Create() {
   const FACE_GENERATION_COST = 2; // Costs 2 coins to generate a face
   const BODY_GENERATION_COST = 5; // Costs 5 coins to generate a body
 
+  // Add Firebase Cloud Function URLs
+  const FACE_GENERATION_API = 'https://generateface-wyzrfw2zma-uc.a.run.app';
+  const BODY_GENERATION_API = 'https://generatebody-wyzrfw2zma-uc.a.run.app';
+
   // Debug effect to log when preview image changes
   useEffect(() => {
     console.log('Preview image updated:', previewImage);
@@ -267,7 +271,7 @@ export default function Create() {
     }
   };
 
-  // Handle generate image button click
+  // Update handleGenerateImage function to call Firebase Functions directly
   const handleGenerateImage = async () => {
     try {
       // Check if user has enough coins
@@ -316,12 +320,19 @@ export default function Create() {
           while (!faceGenerationSuccessful && attemptCount < MAX_RETRY_ATTEMPTS) {
             attemptCount++;
             try {
-              const faceResponse = await fetch('/api/generate-face', {
+              // Call Firebase Function directly instead of Next.js API
+              const faceResponse = await fetch(FACE_GENERATION_API, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
+                  'Accept': 'application/json'
                 },
-                body: JSON.stringify(requestData),
+                body: JSON.stringify({
+                  data: {
+                    prompt: generateFacePrompt(requestData),
+                    numSamples: 1
+                  }
+                }),
               });
               
               if (!faceResponse.ok) {
@@ -335,7 +346,14 @@ export default function Create() {
                 continue;
               }
               
-              faceData = await faceResponse.json();
+              const rawFaceData = await faceResponse.json();
+              // Parse the response to match the expected format from our Next.js API
+              faceData = {
+                imageUrl: rawFaceData.result?.imageUrl || (rawFaceData.result?.imageUrls?.[0]) || rawFaceData.imageUrl || (rawFaceData.imageUrls?.[0]) || (Array.isArray(rawFaceData.output) ? rawFaceData.output[0] : null),
+                imageUrls: rawFaceData.result?.imageUrls || rawFaceData.imageUrls || (Array.isArray(rawFaceData.output) ? rawFaceData.output : (rawFaceData.result?.imageUrl ? [rawFaceData.result.imageUrl] : (rawFaceData.imageUrl ? [rawFaceData.imageUrl] : []))),
+                prompt: generateFacePrompt(requestData)
+              };
+              
               console.log('Face API response:', faceData);
               
               // Store the face prompt for later
@@ -379,14 +397,19 @@ export default function Create() {
           while (!bodyGenerationSuccessful && attemptCount < MAX_RETRY_ATTEMPTS) {
             attemptCount++;
             try {
-              const bodyResponse = await fetch('/api/generate-body', {
+              // Call Firebase Function directly instead of Next.js API
+              const bodyResponse = await fetch(BODY_GENERATION_API, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
+                  'Accept': 'application/json'
                 },
                 body: JSON.stringify({
-                  ...requestData,
-                  sourceImageUrl: faceData.imageUrl
+                  data: {
+                    prompt: generateBodyPrompt(requestData),
+                    sourceImageUrl: faceData.imageUrl,
+                    numSamples: 4
+                  }
                 }),
               });
               
@@ -401,7 +424,14 @@ export default function Create() {
                 continue;
               }
               
-              bodyData = await bodyResponse.json();
+              const rawBodyData = await bodyResponse.json();
+              // Parse the response to match the expected format from our Next.js API
+              bodyData = {
+                imageUrl: rawBodyData.result?.imageUrl || (rawBodyData.result?.imageUrls?.[0]) || rawBodyData.imageUrl || (rawBodyData.imageUrls?.[0]) || (Array.isArray(rawBodyData.output) ? rawBodyData.output[0] : null),
+                imageUrls: rawBodyData.result?.imageUrls || rawBodyData.imageUrls || (Array.isArray(rawBodyData.output) ? rawBodyData.output : (rawBodyData.result?.imageUrl ? [rawBodyData.result.imageUrl] : (rawBodyData.imageUrl ? [rawBodyData.imageUrl] : []))),
+                prompt: generateBodyPrompt(requestData)
+              };
+              
               console.log('Body API response:', bodyData);
               
               // Store the body prompt for later
@@ -471,12 +501,19 @@ export default function Create() {
         while (!faceGenerationSuccessful && attemptCount < MAX_RETRY_ATTEMPTS) {
           attemptCount++;
           try {
-            const faceResponse = await fetch('/api/generate-face', {
+            // Call Firebase Function directly instead of Next.js API
+            const faceResponse = await fetch(FACE_GENERATION_API, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json'
               },
-              body: JSON.stringify(requestData),
+              body: JSON.stringify({
+                data: {
+                  prompt: generateFacePrompt(requestData),
+                  numSamples: 1
+                }
+              }),
             });
             
             if (!faceResponse.ok) {
@@ -490,7 +527,14 @@ export default function Create() {
               continue;
             }
             
-            faceData = await faceResponse.json();
+            const rawFaceData = await faceResponse.json();
+            // Parse the response to match the expected format from our Next.js API
+            faceData = {
+              imageUrl: rawFaceData.result?.imageUrl || (rawFaceData.result?.imageUrls?.[0]) || rawFaceData.imageUrl || (rawFaceData.imageUrls?.[0]) || (Array.isArray(rawFaceData.output) ? rawFaceData.output[0] : null),
+              imageUrls: rawFaceData.result?.imageUrls || rawFaceData.imageUrls || (Array.isArray(rawFaceData.output) ? rawFaceData.output : (rawFaceData.result?.imageUrl ? [rawFaceData.result.imageUrl] : (rawFaceData.imageUrl ? [rawFaceData.imageUrl] : []))),
+              prompt: generateFacePrompt(requestData)
+            };
+            
             console.log('Face API response:', faceData);
             
             // Store the face prompt for later
@@ -555,6 +599,79 @@ export default function Create() {
       setSelectedFaceVariantIndex(index);
       setPreviewImage(faceImageVariants[index]);
     }
+  };
+
+  // Helper function to generate a face prompt
+  const generateFacePrompt = (data: any): string => {
+    const {
+      gender,
+      age,
+      ethnicity,
+      eyeColor,
+      hairColor,
+      hairStyle
+    } = data;
+    
+    let prompt = `A realistic portrait of a ${age} year old ${ethnicity} ${gender}`;
+    
+    // Add facial features
+    if (eyeColor) prompt += ` with ${eyeColor} eyes`;
+    if (hairColor && hairStyle) {
+      prompt += `, ${hairColor} ${hairStyle} hair`;
+    } else if (hairColor) {
+      prompt += `, ${hairColor} hair`;
+    } else if (hairStyle) {
+      prompt += `, ${hairStyle} hair`;
+    }
+    
+    // Additional quality keywords
+    prompt += ", high quality, detailed, 4k, intricate, highly detailed";
+    
+    return prompt;
+  };
+  
+  // Helper function to generate a body prompt
+  const generateBodyPrompt = (data: any): string => {
+    const {
+      gender,
+      age,
+      ethnicity,
+      bodyShape,
+      breastSize,
+      buttSize
+    } = data;
+    
+    // Start with the same base prompt format as the face API
+    let prompt = `A realistic full body image of a ${age} year old ${ethnicity} ${gender}. `;
+    if (gender.toLowerCase() === 'female') {
+      prompt += `wearing a nice dress.`;
+    } else {
+      prompt += `wearing a nice suits.`;
+    }
+    
+    // Add body features with the same sentence structure as face API
+    if (bodyShape) prompt += ` with ${bodyShape} body shape`;
+    
+    // Add gender-specific features
+    if (gender.toLowerCase() === 'female') {
+      if (breastSize) {
+        // If we already added "with" for body shape, use a comma
+        if (bodyShape) {
+          prompt += `, ${breastSize} breast size`;
+        } else {
+          prompt += ` with ${breastSize} breast size`;
+        }
+      }
+      
+      if (buttSize) {
+        prompt += `, ${buttSize} butt size`;
+      }
+    }
+    
+    // Use exact same quality keywords as face API
+    prompt += ", high quality, detailed, 4k, intricate, highly detailed";
+    
+    return prompt;
   };
 
   return (
