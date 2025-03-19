@@ -78,8 +78,8 @@ function Page(): React.ReactNode {
         }
       }
 
-      // Redirect to the admin page
-      router.push( "/admin" );
+      // Redirect to the dashboard page
+      router.push( "/dashboard" );
     } catch (err) {
       console.error(err);
       setError("An unexpected error occurred. Please try again.");
@@ -132,8 +132,8 @@ function Page(): React.ReactNode {
         }
       }
       
-      // Redirect to the admin page
-      router.push("/admin");
+      // Redirect to the dashboard page
+      router.push("/dashboard");
     } catch (err) {
       console.error(err);
       setError("An unexpected error occurred. Please try again.");

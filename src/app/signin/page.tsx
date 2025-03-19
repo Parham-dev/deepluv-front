@@ -53,8 +53,8 @@ function Page(): React.ReactNode {
       // The AuthContext will automatically fetch the user data from Firestore
       // when the auth state changes, thanks to our updates
 
-      // Redirect to the admin page
-      router.push("/admin");
+      // Redirect to the dashboard page
+      router.push("/dashboard");
     } catch (err) {
       console.error(err);
       setError("An unexpected error occurred. Please try again.");
@@ -88,8 +88,8 @@ function Page(): React.ReactNode {
       // Google sign-in successful
       console.log(result);
       
-      // Redirect to the admin page
-      router.push("/admin");
+      // Redirect to the dashboard page
+      router.push("/dashboard");
     } catch (err) {
       console.error(err);
       setError("An unexpected error occurred. Please try again.");
